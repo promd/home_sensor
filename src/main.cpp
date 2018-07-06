@@ -2,8 +2,6 @@
 #define FW_VERSION 1
 
 #define BUTTON 19
-#define LED 18
-#define MAX_BRIGHT 64
 
 #define SEALEVELPRESSURE_HPA 1013.25
 
@@ -31,7 +29,6 @@ extern "C" {
 #include <Configuration.hpp>
 #include <AsyncMqttClient.h>
 #include <ESP32WebServer.h> // https://github.com/nhatuan84/esp32-webserver
-#include <Adafruit_NeoPixel.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 
@@ -39,12 +36,6 @@ WiFiClient client;
 AsyncMqttClient mqttClient;
 DynamicJsonBuffer jsonBuffer(512);
 ESP32WebServer server(80);
-// Parameter 3 = pixel type flags, add together as needed:
-//   NEO_KHZ800  800 KHz bitstream (most NeoPixel products w/WS2812 LEDs)
-//   NEO_KHZ400  400 KHz (classic 'v1' (not v2) FLORA pixels, WS2811 drivers)
-//   NEO_GRB     Pixels are wired for GRB bitstream (most NeoPixel products)
-//   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
-Adafruit_NeoPixel pixel = Adafruit_NeoPixel(1, LED, NEO_GRB + NEO_KHZ400);
 Adafruit_BME280 bme;
 
 byte sensorPresentBME280 = 0x00; // -- will hold the address of the BME280 if found.
@@ -74,7 +65,6 @@ String mqttBasePath     = "dietrix/v1/";
 String jsonCreate();
 void execOTA();
 void connectToWifi();
-void setPixelSteps(int sr, int sg, int sb);
 
 void resetConfiguration(int lvl = RESET_NONE) {
     switch (lvl) {
@@ -142,7 +132,6 @@ void i2cScan() {
     }     
   }
 }
-
 
 // --- Triggered when SoftAP is ready. Should start the webserver.
 void startConfigServer() {
@@ -558,30 +547,25 @@ void WiFiEvent(WiFiEvent_t event) {
             break;
         case SYSTEM_EVENT_AP_STACONNECTED:      /**< a station connected to ESP32 soft-AP */
             Serial.println("Client connected to SoftAP.");
-            setPixelSteps(12,0,0);
             startConfigServer();
             break;
         case SYSTEM_EVENT_AP_STADISCONNECTED:   /**< a station disconnected from ESP32 soft-AP */
-            setPixelSteps(25,0,0);
             server.stop();
             Serial.println("Client disconnected from SoftAP.");
             break;
         case SYSTEM_EVENT_AP_START:             /**< ESP32 soft-AP start */
             Serial.println("Starting SoftAP...");
-            setPixelSteps(25,0,0);
             break;
         case SYSTEM_EVENT_ETH_GOT_IP:           /**< ESP32 ethernet got IP from connected AP */
         case SYSTEM_EVENT_STA_GOT_IP:           /**< ESP32 station got IP from connected AP */
             Serial.println("WiFi connected");
             Serial.println("IP address: ");
-            setPixelSteps(0,25,0);
             Serial.println(WiFi.localIP());
             connectToMqtt();
             break;
         case SYSTEM_EVENT_STA_LOST_IP:          /**< ESP32 station lost IP and the IP is reset to 0 */
         case SYSTEM_EVENT_STA_DISCONNECTED:     /**< ESP32 station disconnected from AP */
             Serial.println("WiFi lost connection");
-            setPixelSteps(0,1,0);
             xTimerStop(mqttReconnectTimer, 0); // ensure we don't reconnect to MQTT while reconnecting to Wi-Fi
             break;
     }
@@ -608,67 +592,6 @@ void handleBTTN(){
         }
     }
 
-}
-
-void setPixelSteps(int sr, int sg, int sb) {
-  return; // function disabled - no pixel for now!
-  xTimerStop(pixelTimer, 10);
-  Serial.printf("sr:%03d sg:%03d sb:%03d\r\n",sr,sg,sb);
-
-  // Don't allow smaller steps than "1"
-  if (sr > MAX_BRIGHT) sr = MAX_BRIGHT;
-  if (sg > MAX_BRIGHT) sg = MAX_BRIGHT;
-  if (sb > MAX_BRIGHT) sb = MAX_BRIGHT;
-
-  // Calculate brightness increase / decrease per update
-  if (sr > 0) rPerStep = MAX_BRIGHT / sr;
-  else {
-    rPerStep = 0;
-    r = 0;
-  }
-
-  if (sg > 0) gPerStep = MAX_BRIGHT / sg;
-  else {
-    gPerStep = 0;
-    g = 0;
-  }
-
-  if (sb > 0) bPerStep = MAX_BRIGHT / sb;
-  else {
-    bPerStep = 0;
-    b = 0;
-  }
-
-  Serial.printf("sr:%03d sg:%03d sb:%03d\r\n",sr,sg,sb);
-  Serial.printf("spr:%03d spg:%03d spb:%03d\r\n",rPerStep,gPerStep,bPerStep);
-
-  xTimerReset(pixelTimer, 10);
-  xTimerStart(pixelTimer, 10);
-  delay(200);
-}
-
-volatile bool blockLED = false; 
-void runPixelSteps() {
-    if (blockLED) return;
-
-    blockLED = true;
-
-    tgtR = (r <= tgtR) ? MAX_BRIGHT : 0;
-    tgtG = (g <= tgtG) ? MAX_BRIGHT : 0;
-    tgtB = (b <= tgtB) ? MAX_BRIGHT : 0;
-
-    r = (r <= tgtR) ? r+rPerStep : r-rPerStep;
-    g = (g <= tgtG) ? g+gPerStep : g-gPerStep;
-    b = (b <= tgtB) ? b+bPerStep : b-bPerStep;
-    
-    constrain(r,0,MAX_BRIGHT);
-    constrain(g,0,MAX_BRIGHT);
-    constrain(b,0,MAX_BRIGHT);
-    //Serial.printf("r:%03d g:%03d b:%03d\r\n",r,g,b);
-
-    pixel.setPixelColor(0,r,g,b);
-    pixel.show();
-    blockLED = false;
 }
 
 bool readBME280plausibility(float& temp, float& pres, float& humi) {
@@ -722,7 +645,6 @@ void printValues() {
 }
 
 void setup() {
-    pixel.begin();
     Serial.begin(115200);
 
     //pixelTimer = xTimerCreate("pixelTimer", pdMS_TO_TICKS(100), pdTRUE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(runPixelSteps));
