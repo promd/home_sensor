@@ -732,8 +732,7 @@ void setup() {
     pinMode(BUTTON,INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(BUTTON), handleBTTN, CHANGE);
 
-    //http://192.168.4.1/config?sid=promd&pswd=0798793680031737&name=devboard&mqtt_host=192.168.88.37&mqtt_port=1883
-    WiFi.onEvent(WiFiEvent);
+   WiFi.onEvent(WiFiEvent);
 
     if (! SPIFFS.begin(true)) {
       Serial.println("Could not start SPIFFS !");
